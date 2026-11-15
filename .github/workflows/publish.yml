@@ -181,6 +181,8 @@ jobs:
           name: scripts
 
       - name: Make ${{ matrix.name }} release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           mkdir upload/
           tar -xvpf scripts.tar.gz
