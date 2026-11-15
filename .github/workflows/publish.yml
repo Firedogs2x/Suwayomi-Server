@@ -3,11 +3,6 @@ name: CI Publish
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: Branch
-        type: string
-        required: true
-        default: main
       release_type:
         description: Release type
         type: choice
@@ -19,7 +14,7 @@ on:
       bump:
         description: Version bump type
         type: choice
-        required: false
+        required: true
         default: patch
         options:
           - patch
@@ -52,10 +47,10 @@ jobs:
     needs: check_wrapper
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout ${{ inputs.branch || github.ref }}
+      - name: Checkout ${{ github.ref }}
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.branch || github.ref }}
+          ref: ${{ github.ref }}
           path: master
           fetch-depth: 0
 
@@ -207,7 +202,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ inputs.branch || github.ref }}
+          ref: ${{ github.ref }}
 
       - id: version
         name: Determine release version
@@ -292,7 +287,7 @@ jobs:
         with:
           token: ${{ secrets.DEPLOY_RELEASE_TOKEN }}
           tag_name: ${{ steps.version.outputs.version }}
-          target_commitish: ${{ inputs.branch || github.sha }}
+          target_commitish: ${{ github.sha }}
           draft: true
           prerelease: ${{ steps.version.outputs.prerelease }}
           files: release/*
