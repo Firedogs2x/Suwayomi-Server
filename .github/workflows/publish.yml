@@ -2,6 +2,29 @@ name: CI Publish
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch
+        type: string
+        required: true
+        default: main
+      release_type:
+        description: Release type
+        type: choice
+        required: true
+        default: official
+        options:
+          - official
+          - nightly
+      bump:
+        description: Version bump type
+        type: choice
+        required: false
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
   push:
     tags:
       - "v*"
@@ -9,6 +32,9 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   check_wrapper:
@@ -26,10 +52,10 @@ jobs:
     needs: check_wrapper
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout ${{ github.ref }}
+      - name: Checkout ${{ inputs.branch || github.ref }}
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.branch || github.ref }}
           path: master
           fetch-depth: 0
 
@@ -173,10 +199,47 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: bundle
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.branch || github.ref }}
+
+      - id: version
+        name: Determine release version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            version="${{ github.ref#refs/tags/ }}"
+          else
+            latest=$(git tag -l 'v*' --sort=-v:refname | head -n 1 | sed 's/^v//')
+            if [ -z "$latest" ]; then
+              latest="2.0.0"
+            fi
+            IFS='.' read -r major minor patch <<< "$latest"
+            case "${{ inputs.bump }}" in
+              major)
+                major=$((major+1))
+                minor=0
+                patch=0
+                ;;
+              minor)
+                minor=$((minor+1))
+                patch=0
+                ;;
+              patch)
+                patch=$((patch+1))
+                ;;
+            esac
+            version="v$major.$minor.$patch"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$([ "${{ inputs.release_type }}" = "nightly" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v8
         with:
           name: jar
@@ -217,5 +280,8 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           token: ${{ secrets.DEPLOY_RELEASE_TOKEN }}
+          tag_name: ${{ steps.version.outputs.version }}
+          target_commitish: ${{ inputs.branch || github.sha }}
           draft: true
+          prerelease: ${{ steps.version.outputs.prerelease }}
           files: release/*
