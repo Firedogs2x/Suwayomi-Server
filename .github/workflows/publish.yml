@@ -213,15 +213,20 @@ jobs:
         name: Determine release version
         shell: bash
         run: |
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            version="${{ github.ref#refs/tags/ }}"
+          ref="${{ github.ref }}"
+          event="${{ github.event_name }}"
+          if [[ "$ref" == refs/tags/v* ]]; then
+            version="${ref#refs/tags/}"
+            prerelease="false"
           else
+            git fetch --tags
             latest=$(git tag -l 'v*' --sort=-v:refname | head -n 1 | sed 's/^v//')
             if [ -z "$latest" ]; then
               latest="2.0.0"
             fi
             IFS='.' read -r major minor patch <<< "$latest"
-            case "${{ inputs.bump }}" in
+            bump="${{ inputs.bump }}"
+            case "$bump" in
               major)
                 major=$((major+1))
                 minor=0
@@ -231,14 +236,20 @@ jobs:
                 minor=$((minor+1))
                 patch=0
                 ;;
-              patch)
+              patch|*)
                 patch=$((patch+1))
                 ;;
             esac
             version="v$major.$minor.$patch"
+            release_type="${{ inputs.release_type }}"
+            if [ "$release_type" = "nightly" ]; then
+              prerelease="true"
+            else
+              prerelease="false"
+            fi
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$([ "${{ inputs.release_type }}" = "nightly" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
       - uses: actions/download-artifact@v8
         with:
